@@ -93,8 +93,24 @@ class PydanticModelGenerator:
             d.field: (d.field_type, Field(default=d.field_value, alias=d.field_alias, exclude=d.field_exclude)) for d in self._model_def
         }
         DynamicModel = create_model(self._model_name, **fields)
-        DynamicModel.__config__.allow_population_by_field_name = True
-        DynamicModel.__config__.allow_mutation = True
+
+        # Handle Pydantic v1/v2 compatibility - __config__ was replaced with model_config in v2
+        try:
+            # Pydantic v1 API
+            DynamicModel.__config__.allow_population_by_field_name = True
+            DynamicModel.__config__.allow_mutation = True
+        except AttributeError:
+            # Pydantic v2 API
+            try:
+                from pydantic import ConfigDict
+                DynamicModel.model_config = ConfigDict(
+                    populate_by_name=True,
+                    arbitrary_types_allowed=True
+                )
+            except ImportError:
+                # Fallback if ConfigDict not available
+                print("⚠️  Pydantic configuration failed - using defaults")
+
         return DynamicModel
 
 StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(

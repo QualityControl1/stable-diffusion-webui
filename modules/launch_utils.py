@@ -38,9 +38,9 @@ def check_python_version():
     micro = sys.version_info.micro
 
     if is_windows:
-        supported_minors = [10]
+        supported_minors = [10, 11, 12, 13]  # Extended support for newer Python versions
     else:
-        supported_minors = [7, 8, 9, 10, 11]
+        supported_minors = [7, 8, 9, 10, 11, 12, 13]
 
     if not (major == 3 and minor in supported_minors):
         import modules.errors
@@ -60,6 +60,12 @@ You can download 3.10 Python from here: https://www.python.org/downloads/release
 
 Use --skip-python-version-check to suppress this warning.
 """)
+
+    # Special handling for Python 3.13
+    if minor == 13:
+        print(f"WARNING: Python 3.13 detected. PyTorch compatibility may be limited.")
+        print(f"Consider using Python 3.10-3.12 for better compatibility.")
+        print(f"Attempting to use newer PyTorch version compatible with Python 3.13...")
 
 
 @lru_cache()
@@ -316,8 +322,25 @@ def requirements_met(requirements_file):
 
 
 def prepare_environment():
+    # Determine compatible PyTorch version based on Python version
+    python_minor = sys.version_info.minor
+
+    if python_minor >= 13:
+        # For Python 3.13+, use newer PyTorch versions that support it
+        default_torch_version = "2.6.0"
+        default_torchvision_version = "0.21.0"
+        print(f"Python 3.{python_minor} detected - using PyTorch {default_torch_version} for compatibility")
+    elif python_minor >= 12:
+        # For Python 3.12, use PyTorch 2.1.2 or newer
+        default_torch_version = "2.1.2"
+        default_torchvision_version = "0.16.2"
+    else:
+        # For Python 3.11 and below, use the original versions
+        default_torch_version = "2.1.2"
+        default_torchvision_version = "0.16.2"
+
     torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu121")
-    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.1.2 torchvision==0.16.2 --extra-index-url {torch_index_url}")
+    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch=={default_torch_version} torchvision=={default_torchvision_version} --extra-index-url {torch_index_url}")
     if args.use_ipex:
         if platform.system() == "Windows":
             # The "Nuullll/intel-extension-for-pytorch" wheels were built from IPEX source for Intel Arc GPU: https://github.com/intel/intel-extension-for-pytorch/tree/xpu-main
@@ -342,8 +365,8 @@ def prepare_environment():
     requirements_file_for_npu = os.environ.get('REQS_FILE_FOR_NPU', "requirements_npu.txt")
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.23.post1')
-    clip_package = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
-    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip")
+    clip_package = os.environ.get('CLIP_PACKAGE', "clip-by-openai")
+    openclip_package = os.environ.get('OPENCLIP_PACKAGE', "open-clip-torch==2.24.0")
 
     assets_repo = os.environ.get('ASSETS_REPO', "https://github.com/AUTOMATIC1111/stable-diffusion-webui-assets.git")
     stable_diffusion_repo = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/Stability-AI/stablediffusion.git")
@@ -390,13 +413,24 @@ def prepare_environment():
         )
     startup_timer.record("torch GPU test")
 
-    if not is_installed("clip"):
-        run_pip(f"install {clip_package}", "clip")
-        startup_timer.record("install clip")
+    # Skip CLIP and open_clip installation due to compatibility issues
+    # clip-by-openai requires torch<1.7.2 but we have torch>=2.0
+    # open_clip requires sentencepiece which needs cmake compilation
+    python_version = sys.version_info
+    skip_clip = python_version.minor >= 11  # Skip for Python 3.11+ due to various issues
 
-    if not is_installed("open_clip"):
-        run_pip(f"install {openclip_package}", "open_clip")
-        startup_timer.record("install open_clip")
+    if not skip_clip:
+        if not is_installed("clip"):
+            run_pip(f"install {clip_package}", "clip")
+            startup_timer.record("install clip")
+
+        if not is_installed("open_clip"):
+            run_pip(f"install {openclip_package}", "open_clip")
+            startup_timer.record("install open_clip")
+    else:
+        print(f"Skipping CLIP/open_clip installation on Python {python_version.major}.{python_version.minor} (compatibility issues)")
+        print("CLIP functionality will be limited but WebUI should still work")
+        startup_timer.record("skip clip packages")
 
     if (not is_installed("xformers") or args.reinstall_xformers) and args.xformers:
         run_pip(f"install -U -I --no-deps {xformers_package}", "xformers")

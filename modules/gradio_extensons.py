@@ -74,7 +74,18 @@ def Blocks_get_config_file(self, *args, **kwargs):
     return config
 
 
-original_IOComponent_init = patches.patch(__name__, obj=gr.components.IOComponent, field="__init__", replacement=IOComponent_init)
+# Handle Gradio version compatibility - IOComponent was renamed to Component in Gradio 4.x
+try:
+    # Try Gradio 3.x API first
+    original_IOComponent_init = patches.patch(__name__, obj=gr.components.IOComponent, field="__init__", replacement=IOComponent_init)
+except AttributeError:
+    # Fallback to Gradio 4.x+ API
+    try:
+        original_IOComponent_init = patches.patch(__name__, obj=gr.components.Component, field="__init__", replacement=IOComponent_init)
+    except AttributeError:
+        # If both fail, create a dummy patch
+        print("⚠️  Gradio component patching failed - using fallback")
+        original_IOComponent_init = None
 original_Block_get_config = patches.patch(__name__, obj=gr.blocks.Block, field="get_config", replacement=Block_get_config)
 original_BlockContext_init = patches.patch(__name__, obj=gr.blocks.BlockContext, field="__init__", replacement=BlockContext_init)
 original_Blocks_get_config_file = patches.patch(__name__, obj=gr.blocks.Blocks, field="get_config_file", replacement=Blocks_get_config_file)

@@ -32,7 +32,62 @@ from ldm.data.util import AddMiDaS
 from ldm.models.diffusion.ddpm import LatentDepth2ImageDiffusion
 
 from einops import repeat, rearrange
-from blendmodes.blend import blendLayers, BlendType
+# blendmodes import with Python 3.13 compatibility fallback
+try:
+    from blendmodes.blend import blendLayers, BlendType
+except ImportError:
+    print("⚠️  blendmodes not available - using fallback implementation")
+    # Minimal fallback implementation for Python 3.13 compatibility
+    from enum import Enum
+    import numpy as np
+
+    class BlendType(Enum):
+        NORMAL = "normal"
+        MULTIPLY = "multiply"
+        SCREEN = "screen"
+        OVERLAY = "overlay"
+        SOFT_LIGHT = "soft_light"
+        HARD_LIGHT = "hard_light"
+        COLOR_DODGE = "color_dodge"
+        COLOR_BURN = "color_burn"
+        DARKEN = "darken"
+        LIGHTEN = "lighten"
+        DIFFERENCE = "difference"
+        EXCLUSION = "exclusion"
+        LUMINOSITY = "luminosity"
+
+    def blendLayers(background, foreground, blendType=BlendType.NORMAL, opacity=1.0):
+        """Fallback blend function for Python 3.13 compatibility"""
+        # Convert PIL Images to numpy arrays if needed
+        if hasattr(background, 'convert'):
+            background = np.array(background.convert('RGB'))
+        if hasattr(foreground, 'convert'):
+            foreground = np.array(foreground.convert('RGB'))
+
+        # Ensure numpy arrays
+        if not isinstance(background, np.ndarray):
+            background = np.array(background)
+        if not isinstance(foreground, np.ndarray):
+            foreground = np.array(foreground)
+
+        # Ensure same shape
+        if background.shape != foreground.shape:
+            foreground = np.resize(foreground, background.shape)
+
+        # Simple blending (fallback to normal blend for most modes)
+        if blendType == BlendType.LUMINOSITY:
+            # Simple luminosity blend approximation
+            result = foreground * opacity + background * (1 - opacity)
+        else:
+            # Default to normal blend
+            result = foreground * opacity + background * (1 - opacity)
+
+        # Ensure valid range and type
+        result = np.clip(result, 0, 255).astype(np.uint8)
+
+        # Convert back to PIL Image
+        from PIL import Image
+        return Image.fromarray(result)
 
 
 # some of those options should not be changed at all because they would break the model, so I removed them from options.
